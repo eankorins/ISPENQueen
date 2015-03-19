@@ -16,7 +16,9 @@ public class QueensLogic {
     private int[][] board;
     private int cellCount = 0;
     BDDFactory factory = JFactory.init(2000000, 200000);
-    BDD rule = factory.one();
+    BDD bdd;
+    BDD restricted;
+    private List<Integer> queens;
     public QueensLogic() {
        //constructor
     }
@@ -27,22 +29,35 @@ public class QueensLogic {
         this.board = new int[x][y];
         this.cellCount = x * y;
         factory.setVarNum(cellCount);
-        buildBDD();
+        bdd = buildBDD();
+        queens = new ArrayList<Integer>();
     }
 
     public BDD buildBDD(){
-        BDD t = factory.one();
+        BDD bdd = factory.one();
         for(int row = 0; row < board.length; row++){
-            for(int col = 0; col <  board.length; col++){
-                BDD node = t.andWith(factory.ithVar(row * board.length + col));
-                List<Integer> affected = getAffectedCells(col,row);
-                for(int i : affected){
-                    node.andWith(factory.nithVar(i));
-                }
+            for(int col = 0; col < board.length; col++){
+                List<Integer> affected = getAffectedCells(col, row);
+                bdd.andWith(buildSingleCellBDD(row * board.length + col, affected));
             }
         }
-        rule.andWith(t);
-        return null;
+
+        return bdd.andWith(restrictRows());
+    }
+    public BDD buildSingleCellBDD(int cellNumber, List<Integer> affected){
+        BDD c = factory.one();
+        for(int a : affected){
+            c.andWith(factory.nithVar(a));
+        }
+        return factory.ithVar(cellNumber).imp(c);
+    }
+    public List<Integer> getAffectedCells(int col, int row){
+        List<Integer> result = new ArrayList<Integer>();
+        result.addAll(getLeftDiagonal(col, row));
+        result.addAll(getRightDiagonal(col, row));
+        result.addAll(getRemainingColumn(col, row));
+        result.addAll(getRemainingRow(col,row));
+        return result;
     }
     public List<Integer> getRemainingRow(int col, int row){
         List<Integer> result = new ArrayList<Integer>();
@@ -54,14 +69,7 @@ public class QueensLogic {
         return result;
     }
 
-    public List<Integer> getAffectedCells(int col, int row){
-        List<Integer> result = new ArrayList<Integer>();
-        result.addAll(getLeftDiagonal(col, row));
-        result.addAll(getRightDiagonal(col, row));
-        result.addAll(getRemainingColumn(col, row));
-        result.addAll(getRemainingRow(col,row));
-        return result;
-    }
+
     public List<Integer> getRemainingColumn(int col, int row){
         List<Integer> result = new ArrayList<Integer>();
         for(int r = 0; r < board.length; r++){
@@ -123,6 +131,25 @@ public class QueensLogic {
         return board;
     }
 
+    public BDD restrictRows(){
+        BDD r = factory.one();
+
+        for(int row = 0;  row < board.length; row++){
+            BDD rInner = factory.zero();
+            for(int col = 0; col < board.length; col++){
+                rInner.orWith(factory.ithVar(row*board.length + col));
+            }
+            r.andWith(rInner);
+        }
+        return r;
+    }
+    public BDD queenRestrictions(){
+        BDD r = factory.one();
+        for(int pos : queens){
+            r.andWith(factory.ithVar(pos));
+        }
+        return bdd.restrict(r);
+    }
     public boolean insertQueen(int column, int row) {
 
         if (board[column][row] == -1 || board[column][row] == 1) {
@@ -131,13 +158,15 @@ public class QueensLogic {
         board[column][row] = 1;
 
         int cellNum = row * board.length + column;
-        rule.restrict(factory.ithVar(cellNum));
-        System.out.println("node count" + rule.nodeCount());
+        queens.add(cellNum);
+
+        restricted = queenRestrictions();
+        System.out.println("node count" + bdd.nodeCount());
 
         for(int r = 0; r < board.length; r++){
             for(int c = 0; c < board.length; c++){
                 int cellNumber = r * board.length + c;
-                if(rule.restrict(factory.ithVar(cellNumber)).isZero()){
+                if(restricted.restrict(factory.ithVar(cellNumber)).isZero()){
                     board[c][r] = -1;
                 }
             }
